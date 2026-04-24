@@ -199,6 +199,7 @@ def handle_follow(event):
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
+    print("[LINE] handle_message called", flush=True)
     try:
         user_id = event.source.user_id
         user_message = event.message.text
@@ -238,6 +239,7 @@ async def webhook(request: Request):
     signature = request.headers.get("X-Line-Signature", "")
     body = await request.body()
     body_text = body.decode()
+    print(f"[LINE] Webhook received, body length={len(body_text)}", flush=True)
 
     try:
         loop = asyncio.get_running_loop()
