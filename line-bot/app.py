@@ -1,3 +1,4 @@
+import logging
 from fastapi import FastAPI, Request, HTTPException
 from linebot.v3 import WebhookHandler
 from linebot.v3.messaging import (
@@ -14,6 +15,12 @@ import os
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(name)s: %(message)s",
+)
+logger = logging.getLogger(__name__)
 
 app = FastAPI()
 
@@ -46,6 +53,7 @@ async def webhook(request: Request):
     try:
         handler.handle(body.decode(), signature)
     except InvalidSignatureError:
+        logger.error("Invalid signature received")
         raise HTTPException(status_code=400, detail="Invalid signature")
 
     return "OK"
@@ -54,26 +62,34 @@ async def webhook(request: Request):
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
     user_message = event.message.text
+    logger.info("Received message from user: %s", user_message)
 
-    # Claude APIで返答生成
-    response = anthropic_client.messages.create(
-        model="claude-sonnet-4-6",
-        max_tokens=500,
-        system=SYSTEM_PROMPT,
-        messages=[{"role": "user", "content": user_message}],
-    )
-
-    reply_text = response.content[0].text
+    try:
+        response = anthropic_client.messages.create(
+            model="claude-sonnet-4-6",
+            max_tokens=500,
+            system=SYSTEM_PROMPT,
+            messages=[{"role": "user", "content": user_message}],
+        )
+        reply_text = response.content[0].text
+        logger.info("Claude API response generated successfully")
+    except Exception as e:
+        logger.error("Claude API call failed: %s", e)
+        reply_text = "只今対応できません。しばらくお待ちください。"
 
     # LINEに返信
-    with ApiClient(configuration) as api_client:
-        line_bot_api = MessagingApi(api_client)
-        line_bot_api.reply_message(
-            ReplyMessageRequest(
-                reply_token=event.reply_token,
-                messages=[TextMessage(text=reply_text)],
+    try:
+        with ApiClient(configuration) as api_client:
+            line_bot_api = MessagingApi(api_client)
+            line_bot_api.reply_message(
+                ReplyMessageRequest(
+                    reply_token=event.reply_token,
+                    messages=[TextMessage(text=reply_text)],
+                )
             )
-        )
+        logger.info("Reply sent to LINE successfully")
+    except Exception as e:
+        logger.error("Failed to send reply to LINE: %s", e)
 
 
 @app.get("/")
