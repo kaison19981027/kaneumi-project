@@ -16,9 +16,13 @@ from linebot.v3.exceptions import InvalidSignatureError
 import anthropic
 import os
 import asyncio
+import logging
 import requests
 from collections import defaultdict, deque
 from dotenv import load_dotenv
+
+logging.basicConfig(level=logging.INFO, format="%(asctime)s %(message)s")
+log = logging.getLogger(__name__)
 
 load_dotenv()
 
@@ -168,9 +172,9 @@ def notify_admin(user_message: str) -> None:
                 data={"message": f"\n【問い合わせ通知】\n{user_message}"},
                 timeout=5,
             )
-            print("[Notify] LINE Notify sent", flush=True)
+            log.info("[Notify] LINE Notify sent")
         except Exception as e:
-            print(f"[Notify] Error: {e}", flush=True)
+            log.error(f"[Notify] Error: {e}")
 
     if ADMIN_LINE_USER_ID:
         try:
@@ -179,9 +183,9 @@ def notify_admin(user_message: str) -> None:
                     to=ADMIN_LINE_USER_ID,
                     messages=[TextMessage(text=f"【問い合わせ通知】\n{user_message}")],
                 ))
-            print("[Notify] Push sent to admin", flush=True)
+            log.info("[Notify] Push sent to admin")
         except Exception as e:
-            print(f"[Notify] Push error: {e}", flush=True)
+            log.error(f"[Notify] Push error: {e}")
 
 
 @handler.add(FollowEvent)
@@ -192,24 +196,22 @@ def handle_follow(event):
                 reply_token=event.reply_token,
                 messages=[TextMessage(text=WELCOME_MESSAGE, quick_reply=QUICK_REPLY)],
             ))
-        print("[LINE] Welcome message sent", flush=True)
+        log.info("[LINE] Welcome message sent")
     except Exception as e:
-        print(f"[LINE] Follow error: {e}", flush=True)
+        log.error(f"[LINE] Follow error: {e}")
 
 
 @handler.add(MessageEvent, message=TextMessageContent)
 def handle_message(event):
-    print("[LINE] handle_message called", flush=True)
+    log.info("[LINE] handle_message called")
     try:
         user_id = event.source.user_id
         user_message = event.message.text
-        print(f"[LINE] User {user_id[:8]}: {user_message}", flush=True)
+        log.info(f"[LINE] User {user_id[:8]}: {user_message}")
 
-        # 担当者通知
         if any(kw in user_message for kw in ESCALATION_KEYWORDS):
             notify_admin(user_message)
 
-        # 会話履歴取得・更新
         history = conversation_histories[user_id]
         history.append({"role": "user", "content": user_message})
 
@@ -222,16 +224,16 @@ def handle_message(event):
         reply_text = response.content[0].text
         history.append({"role": "assistant", "content": reply_text})
 
-        print(f"[LINE] Replying: {reply_text[:80]}", flush=True)
+        log.info(f"[LINE] Replying: {reply_text[:80]}")
 
         with ApiClient(configuration) as api_client:
             MessagingApi(api_client).reply_message(ReplyMessageRequest(
                 reply_token=event.reply_token,
                 messages=[TextMessage(text=reply_text, quick_reply=QUICK_REPLY)],
             ))
-        print("[LINE] Reply sent", flush=True)
+        log.info("[LINE] Reply sent")
     except Exception as e:
-        print(f"[LINE] Error: {type(e).__name__}: {e}", flush=True)
+        log.error(f"[LINE] Error: {type(e).__name__}: {e}")
 
 
 @app.post("/webhook")
@@ -239,7 +241,7 @@ async def webhook(request: Request):
     signature = request.headers.get("X-Line-Signature", "")
     body = await request.body()
     body_text = body.decode()
-    print(f"[LINE] Webhook received, body length={len(body_text)}", flush=True)
+    log.info(f"[LINE] Webhook received, body={len(body_text)}bytes")
 
     try:
         loop = asyncio.get_running_loop()
@@ -247,7 +249,7 @@ async def webhook(request: Request):
     except InvalidSignatureError:
         raise HTTPException(status_code=400, detail="Invalid signature")
     except Exception as e:
-        print(f"[LINE] Webhook error: {type(e).__name__}: {e}", flush=True)
+        log.error(f"[LINE] Webhook error: {type(e).__name__}: {e}")
 
     return "OK"
 
